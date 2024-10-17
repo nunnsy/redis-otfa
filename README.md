@@ -7,5 +7,5 @@ Planned use is an ephemeral server whereby Redis is used as the transaction laye
 At minimum, the `redis.conf` associated with the instance must contain a definition for an administrator, as well as restrictive commands for the default user:
 ```
 user admin allcommands allkeys allchannels on >admin
-user default reset +SISMEMBER %R~ofta_users +XADD %W~otfa_request on nopass
+user default reset +SISMEMBER %R~otfa_users +XADD %W~otfa_request on nopass
 ```
