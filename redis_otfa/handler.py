@@ -23,6 +23,17 @@ class OtfaHandler:
         user_keys: Sequence[str] | None = None,
         user_channels: Sequence[str] | None = None,
     ) -> None:
+        """
+        Instantiate the handler
+
+        Args:
+            redis_connection (Redis): Redis connection instance
+            admin_username (str): Administrator username (needs ACL permissions)
+            admin_password (str): Administrator password
+            user_commands (Sequence[str] | None, optional): User commands to allow. Defaults to None.
+            user_keys (Sequence[str] | None, optional): User keys to allow. Use `{username}` within the string for user-specific keys. Defaults to None.
+            user_channels (Sequence[str] | None, optional): User channels to allow. Use `{username}` within the string for user-specific channels. Defaults to None.
+        """
         self._redis_connection = redis_connection
 
         self._redis_connection.auth(username=admin_username, password=admin_password)
@@ -63,28 +74,38 @@ class OtfaHandler:
                     _LOGGER.error("Malformed request, username or password is missing - raw request: %s", next_request)
                     continue
 
-                next_request_username_raw: bytes = next_request_data[b"username"]
-                next_request_password_raw: bytes = next_request_data[b"password"]
-                next_request_username: str = next_request_username_raw.decode()
-                next_request_password: str = next_request_password_raw.decode()
+                username_raw: bytes = next_request_data[b"username"]
+                password_raw: bytes = next_request_data[b"password"]
+                username: str = username_raw.decode()
+                password: str = password_raw.decode()
 
-                user_exists: bool = does_user_exist(self._redis_connection, next_request_username)
+                user_exists: bool = does_user_exist(self._redis_connection, username)
 
                 if not user_exists:
                     # User does not exist, and we can add them
-                    _LOGGER.info("Registering new user: %s", next_request_username)
+                    _LOGGER.info("Registering new user: %s", username)
                     registration_pipeline: Pipeline = self._redis_connection.pipeline()
 
-                    registration_pipeline.acl_setuser(
-                        username=next_request_username,
-                        enabled=True,
-                        passwords=[f"+{next_request_password}"],
-                        reset=True,
-                        commands=self._user_commands,
-                        keys=self._user_keys,
-                        channels=self._user_channels,
+                    user_commands: Sequence[str] | None = self._user_commands
+                    user_keys: Sequence[str] | None = (
+                        None if self._user_keys is None else [uk.format(username=username) for uk in self._user_keys]
                     )
-                    registration_pipeline.sadd(USERS_KEY, next_request_username)
+                    user_channels: Sequence[str] | None = (
+                        None
+                        if self._user_channels is None
+                        else [uc.format(username=username) for uc in self._user_channels]
+                    )
+
+                    registration_pipeline.acl_setuser(
+                        username=username,
+                        enabled=True,
+                        passwords=[f"+{password}"],
+                        reset=True,
+                        commands=user_commands,
+                        keys=user_keys,
+                        channels=user_channels,
+                    )
+                    registration_pipeline.sadd(USERS_KEY, username)
 
                     registration_pipeline.execute()
 
